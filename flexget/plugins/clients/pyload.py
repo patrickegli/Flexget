@@ -13,9 +13,10 @@ logger = logger.bind(name='pyload')
 
 
 class PyloadApi:
-    def __init__(self, requests, url):
+    def __init__(self, requests, url, verify_tls):
         self.requests = requests
         self.url = url
+        self.verify_tls = verify_tls
 
     def get_session(self, config):
         # Login
@@ -32,7 +33,7 @@ class PyloadApi:
 
     def get(self, method):
         try:
-            return self.requests.get(self.url.rstrip("/") + "/" + method.strip("/"))
+            return self.requests.get(self.url.rstrip("/") + "/" + method.strip("/"), verify=self.verify_tls)
         except RequestException as e:
             if e.response and e.response.status_code == 500:
                 raise plugin.PluginError(f'Internal API Error: <{method}> <{self.url}>', logger)
@@ -40,7 +41,7 @@ class PyloadApi:
 
     def post(self, method, data):
         try:
-            return self.requests.post(self.url.rstrip("/") + "/" + method.strip("/"), data=data)
+            return self.requests.post(self.url.rstrip("/") + "/" + method.strip("/"), data=data, verify=self.verify_tls)
         except RequestException as e:
             if e.response and e.response.status_code == 500:
                 raise plugin.PluginError(
@@ -78,6 +79,17 @@ class PluginPyLoad:
           parse_url: no
           multiple_hoster: yes
           enabled: yes
+
+    Using https and self-signed certificate chain::
+
+      pyload:
+          api: https://pylaod.local/api
+          verify_tls: /etc/ssl/certs/pyload.local.cert-chain.pem
+          queue: no
+          hoster: ALL
+          parse_url: no
+          multiple_hoster: yes
+          enabled: yes
     """
 
     __author__ = 'http://pyload.org'
@@ -91,11 +103,18 @@ class PluginPyLoad:
     DEFAULT_MULTIPLE_HOSTER = True
     DEFAULT_PREFERRED_HOSTER_ONLY = False
     DEFAULT_HANDLE_NO_URL_AS_FAILURE = False
+    DEFAULT_VERIFY_TLS = True
 
     schema = {
         'type': 'object',
         'properties': {
             'api': {'type': 'string'},
+            'verify_tls': {
+                'oneOf': [
+                    {'type': 'boolean', 'default': True},
+                    {'type': 'string'}
+                ]
+            },
             'username': {'type': 'string'},
             'password': {'type': 'string'},
             'folder': {'type': 'string'},
@@ -125,11 +144,13 @@ class PluginPyLoad:
         """Adds accepted entries"""
 
         apiurl = config.get('api', self.DEFAULT_API)
-        api = PyloadApi(task.requests, apiurl)
+        verify_tls = config.get('verify_tls', self.DEFAULT_VERIFY_TLS)
+        api = PyloadApi(task.requests, apiurl, verify_tls)
 
         try:
             session = api.get_session(config)
-        except OSError:
+        except OSError as e:
+            logger.critical(e)
             raise plugin.PluginError('pyLoad not reachable', logger)
         except plugin.PluginError:
             raise
@@ -195,7 +216,7 @@ class PluginPyLoad:
 
             # no preferred hoster and not preferred hoster only - add all recognized plugins
             if not urls and not config.get(
-                'preferred_hoster_only', self.DEFAULT_PREFERRED_HOSTER_ONLY
+                    'preferred_hoster_only', self.DEFAULT_PREFERRED_HOSTER_ONLY
             ):
                 for name, purls in parsed.items():
                     if name != 'BasePlugin':
