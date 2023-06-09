@@ -300,10 +300,17 @@ def get_flexget_qualities(profile, cutoff_only=False):
     else:
         for quality in profile["items"]:
             if quality["allowed"]:
-                name = quality["quality"]["name"]
-                quality_req = radarr_quality_to_flexget_quality_req(name)
-                if quality_req:
-                    quality_requirements.append(quality_req)
+                if hasattr(quality, 'quality'):
+                    name = quality["quality"]["name"]
+                    quality_req = radarr_quality_to_flexget_quality_req(name)
+                    if quality_req:
+                        quality_requirements.append(quality_req)
+                else:
+                    for quality_item in quality["items"]:
+                        name = quality_item["quality"]["name"]
+                        quality_req = radarr_quality_to_flexget_quality_req(name)
+                        if quality_req:
+                            quality_requirements.append(quality_req)
 
     return quality_requirements
 
